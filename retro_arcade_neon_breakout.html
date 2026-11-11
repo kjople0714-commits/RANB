@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retro Arcade Neon Breakout</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+        
+        .arcade-font {
+            font-family: 'Press Start 2P', monospace;
+        }
+
+        body {
+            background-color: #0d061f;
+            color: #fff;
+            overflow-x: hidden;
+        }
+
+        /* Custom glow effects for arcade theme */
+        .neon-shadow {
+            box-shadow: 0 0 15px rgba(236, 72, 153, 0.6), inset 0 0 15px rgba(59, 130, 246, 0.4);
+        }
+
+        .text-glow {
+            text-shadow: 0 0 10px #ec4899, 0 0 20px #8b5cf6, 0 0 30px #3b82f6;
+        }
+
+        /* Dynamic Combo Color Effects */
+        .combo-default { color: #facc15; text-shadow: 0 0 8px #facc15; }
+        .combo-10 { color: #ef4444; text-shadow: 0 0 10px #ef4444, 0 0 20px #b91c1c; }
+        .combo-30 { color: #22c55e; text-shadow: 0 0 10px #22c55e, 0 0 20px #15803d; }
+        .combo-50 { 
+            background: linear-gradient(90deg, #ff0000, #ff7f00, #ffff00, #00ff00, #00ffff, #0000ff, #8b00ff, #ff0000);
+            background-size: 200% auto;
+            color: transparent !important;
+            -webkit-background-clip: text !important;
+            background-clip: text !important;
+            animation: rainbow 1s linear infinite;
+            filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.8));
+        }
+
+        @keyframes rainbow {
+            0% { background-position: 0% 50%; }
+            100% { background-position: 200% 50%; }
+        }
+
+        canvas {
+            background: radial-gradient(circle at center, #1a103c 0%, #080314 100%);
+            box-shadow: 0 0 30px rgba(139, 92, 246, 0.3);
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col items-center justify-center p-4 select-none overflow-hidden">
+
+    <!-- Header Section -->
+    <header class="text-center mb-3">
+        <h1 class="arcade-font text-xl md:text-3xl text-pink-500 text-glow tracking-wider mb-1">NEON BREAKOUT</h1>
+        <p class="text-xs md:text-sm text-purple-300">★ 노란색 공(진짜 공)을 지키세요! ★</p>
+    </header>
+
+    <!-- Main Game Container -->
+    <main class="relative w-full max-w-xl flex flex-col items-center">
+        
+        <!-- Score & Stats Bar -->
+        <div class="w-full flex justify-between items-center bg-gray-900/80 border border-purple-500/40 rounded-t-xl px-4 py-3 text-xs md:text-sm arcade-font">
+            <div class="text-blue-400">SCORE: <span id="scoreVal" class="text-white">0</span></div>
+            <div class="text-yellow-400">STAGE: <span id="stageVal" class="text-white">1</span></div>
+            <div class="text-pink-400">LIVES: <span id="livesVal" class="text-white">3</span></div>
+        </div>
+
+        <!-- Canvas Area -->
+        <div class="relative w-full aspect-[4/3] bg-black border-x border-b border-purple-500/40 rounded-b-xl overflow-hidden">
+            <canvas id="gameCanvas" class="w-full h-full block"></canvas>
+            
+            <!-- Combo Display Indicator -->
+            <div id="comboDisplay" class="absolute top-4 right-4 arcade-font text-sm md:text-base pointer-events-none opacity-0 transition-all transform scale-75 combo-default">
+                <span id="comboCount">0</span> COMBO!
+            </div>
+
+            <!-- Overlay Screen (Start / Game Over / Victory / Stage Clear) -->
+            <div id="gameOverlay" class="absolute inset-0 bg-black/85 flex flex-col items-center justify-center text-center p-6 backdrop-blur-sm z-10 transition-all">
+                <h2 id="overlayTitle" class="arcade-font text-2xl md:text-3xl text-pink-400 text-glow mb-2">READY?</h2>
+                <p id="overlayDesc" class="text-xs md:text-sm text-gray-300 mb-4">스테이지를 선택하고 게임을 시작하세요!</p>
+                
+                <!-- Stage Select Grid -->
+                <div id="stageSelectBox" class="mb-5 w-full max-w-xs">
+                    <div class="arcade-font text-xs text-purple-300 mb-2">STAGE SELECT</div>
+                    <div class="grid grid-cols-3 gap-2" id="stageGrid">
+                        <!-- Dynamic Stage Buttons -->
+                    </div>
+                </div>
+
+                <button id="actionBtn" class="arcade-font bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white text-xs md:text-sm px-6 py-3 rounded-lg shadow-lg transform transition active:scale-95 cursor-pointer">
+                    게임 시작
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer Controls (Mobile friendly buttons) -->
+    <footer class="w-full max-w-xl flex justify-between gap-4 mt-3 md:hidden">
+        <button id="leftBtn" class="flex-1 bg-purple-900/60 border border-purple-500/50 py-3 rounded-xl active:bg-purple-700 text-center arcade-font text-xs text-purple-200">◀ 좌로 이동</button>
+        <button id="rightBtn" class="flex-1 bg-purple-900/60 border border-purple-500/50 py-3 rounded-xl active:bg-purple-700 text-center arcade-font text-xs text-purple-200">우로 이동 ▶</button>
+    </footer>
+
+    <!-- Custom Notification/Message Modal (replaces alert) -->
+    <div id="msgModal" class="fixed inset-0 bg-black/70 hidden items-center justify-center z-50 p-4">
+        <div class="bg-gray-900 border border-pink-500 p-6 rounded-xl max-w-sm w-full text-center shadow-2xl">
+            <h3 id="modalTitle" class="arcade-font text-pink-400 text-base mb-3">알림</h3>
+            <p id="modalText" class="text-sm text-gray-300 mb-5">내용이 여기에 표시됩니다.</p>
+            <button onclick="closeModal()" class="arcade-font bg-purple-600 hover:bg-purple-700 text-white text-xs px-4 py-2 rounded-lg">확인</button>
+        </div>
+    </div>
+
+    <!-- JavaScript Game Logic -->
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // UI elements
+        const scoreVal = document.getElementById('scoreVal');
+        const stageVal = document.getElementById('stageVal');
+        const livesVal = document.getElementById('livesVal');
+        const comboDisplay = document.getElementById('comboDisplay');
+        const comboCount = document.getElementById('comboCount');
+        const gameOverlay = document.getElementById('gameOverlay');
+        const overlayTitle = document.getElementById('overlayTitle');
+        const overlayDesc = document.getElementById('overlayDesc');
+        const actionBtn = document.getElementById('actionBtn');
+        const stageSelectBox = document.getElementById('stageSelectBox');
+        const stageGrid = document.getElementById('stageGrid');
+        const msgModal = document.getElementById('msgModal');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalText = document.getElementById('modalText');
+
+        function showMessage(title, text) {
+            modalTitle.innerText = title;
+            modalText.innerText = text;
+            msgModal.classList.remove('hidden');
+            msgModal.classList.add('flex');
+        }
+
+        function closeModal() {
+            msgModal.classList.remove('flex');
+            msgModal.classList.add('hidden');
+        }
+
+        const LOGICAL_WIDTH = 480;
+        const LOGICAL_HEIGHT = 360;
+
+        function resizeCanvas() {
+            canvas.width = LOGICAL_WIDTH;
+            canvas.height = LOGICAL_HEIGHT;
+        }
+        resizeCanvas();
+
+        // Game state variables
+        let gameState = 'START'; // START, PLAYING, STAGE_CLEAR, GAMEOVER, VICTORY
+        let score = 0;
+        let lives = 3;
+        let currentStage = 1;
+        let selectedStage = 1;
+        let maxStages = 6;
+        let combo = 0;
+        let comboTimer = null;
+
+        // Paddle properties
+        const paddle = {
+            baseWidth: 80,
+            width: 80,
+            height: 12,
+            x: (LOGICAL_WIDTH - 80) / 2,
+            y: LOGICAL_HEIGHT - 25,
+            dx: 7,
+            color: '#3b82f6',
+            expandTimer: null
+        };
+
+        // Balls array (Support for multiple balls)
+        let balls = [];
+
+        function createBall(x, y, dx, dy, isMain = false) {
+            return {
+                x: x || LOGICAL_WIDTH / 2,
+                y: y || LOGICAL_HEIGHT - 40,
+                radius: 6,
+                dx: dx || (Math.random() > 0.5 ? 2.5 : -2.5),
+                dy: dy || -3.5,
+                isMain: isMain, // 진짜 공 여부
+                color: isMain ? '#facc15' : '#ec4899' // 진짜 공: 노란색, 복제 공: 분홍색
+            };
+        }
+
+        // Item system
+        let items = [];
+        const ITEM_TYPES = {
+            DOUBLE_BALL: { symbol: '2x', color: '#38bdf8' },
+            PLUS_BALL: { symbol: '+1', color: '#4ade80' },
+            EXPAND_PADDLE: { symbol: '↔', color: '#facc15' }
+        };
+
+        // Brick layout configurations
+        const brickRowCount = 5;
+        const brickColumnCount = 7;
+        const brickWidth = 58;
+        const brickHeight = 16;
+        const brickPadding = 8;
+        const brickOffsetTop = 35;
+        const brickOffsetLeft = 25;
+
+        let bricks = [];
+
+        // 6 Different Stage Patterns
+        const stagePatterns = [
+            // Stage 1: Full Grid
+            [
+                [1,1,1,1,1,1,1],
+                [1,1,1,1,1,1,1],
+                [1,1,1,1,1,1,1],
+                [1,1,1,1,1,1,1],
+                [1,1,1,1,1,1,1]
+            ],
+            // Stage 2: Diamond Pyramid
+            [
+                [0,0,1,1,1,0,0],
+                [0,1,1,1,1,1,0],
+                [1,1,1,1,1,1,1],
+                [0,1,1,1,1,1,0],
+                [0,0,1,1,1,0,0]
+            ],
+            // Stage 3: Checkerboard
+            [
+                [1,0,1,0,1,0,1],
+                [0,1,0,1,0,1,0],
+                [1,1,1,1,1,1,1],
+                [0,1,0,1,0,1,0],
+                [1,0,1,0,1,0,1]
+            ],
+            // Stage 4: Heart Shape
+            [
+                [0,1,1,0,1,1,0],
+                [1,1,1,1,1,1,1],
+                [1,1,1,1,1,1,1],
+                [0,1,1,1,1,1,0],
+                [0,0,1,1,1,0,0]
+            ],
+            // Stage 5: Space Invader
+            [
+                [0,0,1,1,1,0,0],
+                [0,1,1,1,1,1,0],
+                [1,1,0,1,0,1,1],
+                [1,1,1,1,1,1,1],
+                [1,0,1,0,1,0,1]
+            ],
+            // Stage 6: Fortress Wall
+            [
+                [1,1,1,1,1,1,1],
+                [1,0,0,0,0,0,1],
+                [1,0,1,1,1,0,1],
+                [1,0,0,0,0,0,1],
+                [1,1,1,1,1,1,1]
+            ]
+        ];
+
+        // Generate Stage Buttons UI
+        function renderStageButtons() {
+            stageGrid.innerHTML = '';
+            for (let i = 1; i <= maxStages; i++) {
+                const btn = document.createElement('button');
+                btn.className = `arcade-font text-xs py-2 rounded border transition ${
+                    selectedStage === i 
+                    ? 'bg-pink-600 border-pink-400 text-white font-bold scale-105 shadow-md' 
+                    : 'bg-purple-950/70 border-purple-600/50 text-purple-200 hover:bg-purple-800'
+                }`;
+                btn.innerText = `ST ${i}`;
+                btn.onclick = () => {
+                    selectedStage = i;
+                    renderStageButtons();
+                };
+                stageGrid.appendChild(btn);
+            }
+        }
+        renderStageButtons();
+
+        function initBricks(stageNum) {
+            bricks = [];
+            items = [];
+            const colors = ['#ec4899', '#8b5cf6', '#3b82f6', '#10b981', '#f59e0b'];
+            const pattern = stagePatterns[(stageNum - 1) % stagePatterns.length];
+
+            for (let c = 0; c < brickColumnCount; c++) {
+                bricks[c] = [];
+                for (let r = 0; r < brickRowCount; r++) {
+                    const active = pattern[r][c] === 1;
+                    bricks[c][r] = {
+                        x: 0,
+                        y: 0,
+                        status: active ? 1 : 0,
+                        color: colors[r]
+                    };
+                }
+            }
+        }
+
+        // Input controls
+        let rightPressed = false;
+        let leftPressed = false;
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Right' || e.key === 'ArrowRight') rightPressed = true;
+            else if (e.key === 'Left' || e.key === 'ArrowLeft') leftPressed = true;
+            else if (e.code === 'Space') {
+                if (gameState !== 'PLAYING') {
+                    startGame();
+                }
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.key === 'Right' || e.key === 'ArrowRight') rightPressed = false;
+            else if (e.key === 'Left' || e.key === 'ArrowLeft') leftPressed = false;
+        });
+
+        const leftBtn = document.getElementById('leftBtn');
+        const rightBtn = document.getElementById('rightBtn');
+
+        leftBtn.addEventListener('touchstart', () => { leftPressed = true; });
+        leftBtn.addEventListener('touchend', () => { leftPressed = false; });
+        leftBtn.addEventListener('mousedown', () => { leftPressed = true; });
+        leftBtn.addEventListener('mouseup', () => { leftPressed = false; });
+
+        rightBtn.addEventListener('touchstart', () => { rightPressed = true; });
+        rightBtn.addEventListener('touchend', () => { rightPressed = false; });
+        rightBtn.addEventListener('mousedown', () => { rightPressed = true; });
+        rightBtn.addEventListener('mouseup', () => { rightPressed = false; });
+
+        // 마우스 커서가 패들 아래나 화면 전체 어느 위치에 있더라도 X좌표를 추적하도록 document 이벤트로 수정
+        document.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = LOGICAL_WIDTH / rect.width;
+            const mouseX = (e.clientX - rect.left) * scaleX;
+            paddle.x = mouseX - paddle.width / 2;
+            if (paddle.x < 0) paddle.x = 0;
+            if (paddle.x + paddle.width > LOGICAL_WIDTH) paddle.x = LOGICAL_WIDTH - paddle.width;
+        });
+
+        // 모바일 터치 이동도 화면 전체에서 적용
+        document.addEventListener('touchmove', (e) => {
+            if (e.touches.length > 0) {
+                const rect = canvas.getBoundingClientRect();
+                const scaleX = LOGICAL_WIDTH / rect.width;
+                const touchX = (e.touches[0].clientX - rect.left) * scaleX;
+                paddle.x = touchX - paddle.width / 2;
+                if (paddle.x < 0) paddle.x = 0;
+                if (paddle.x + paddle.width > LOGICAL_WIDTH) paddle.x = LOGICAL_WIDTH - paddle.width;
+            }
+        }, { passive: true });
+
+        actionBtn.addEventListener('click', startGame);
+
+        function startGame() {
+            if (gameState === 'START' || gameState === 'GAMEOVER' || gameState === 'VICTORY') {
+                score = (gameState === 'GAMEOVER' || gameState === 'VICTORY') ? 0 : score;
+                currentStage = selectedStage;
+                lives = 3;
+                resetCombo();
+            } else if (gameState === 'STAGE_CLEAR') {
+                currentStage++;
+                selectedStage = currentStage;
+            }
+
+            scoreVal.innerText = score;
+            stageVal.innerText = currentStage;
+            livesVal.innerText = lives;
+
+            resetPaddle();
+            resetBalls();
+            initBricks(currentStage);
+            
+            gameState = 'PLAYING';
+            gameOverlay.classList.add('opacity-0', 'pointer-events-none');
+        }
+
+        function resetPaddle() {
+            paddle.width = paddle.baseWidth;
+            paddle.x = (LOGICAL_WIDTH - paddle.width) / 2;
+            if (paddle.expandTimer) clearTimeout(paddle.expandTimer);
+        }
+
+        function resetBalls() {
+            balls = [createBall(null, null, null, null, true)];
+        }
+
+        function resetCombo() {
+            combo = 0;
+            updateComboUI();
+        }
+
+        function triggerCombo() {
+            combo++;
+            updateComboUI();
+            
+            comboDisplay.classList.remove('opacity-0', 'scale-75');
+            comboDisplay.classList.add('opacity-100', 'scale-110');
+
+            if (comboTimer) clearTimeout(comboTimer);
+            comboTimer = setTimeout(() => {
+                comboDisplay.classList.remove('scale-110');
+            }, 150);
+        }
+
+        function updateComboUI() {
+            comboCount.innerText = combo;
+            
+            // Remove previous combo color classes
+            comboDisplay.classList.remove('combo-default', 'combo-10', 'combo-30', 'combo-50');
+
+            if (combo >= 50) {
+                comboDisplay.classList.add('combo-50');
+            } else if (combo >= 30) {
+                comboDisplay.classList.add('combo-30');
+            } else if (combo >= 10) {
+                comboDisplay.classList.add('combo-10');
+            } else {
+                comboDisplay.classList.add('combo-default');
+            }
+
+            if (combo <= 0) {
+                comboDisplay.classList.add('opacity-0', 'scale-75');
+            }
+        }
+
+        function spawnItem(x, y) {
+            if (Math.random() < 0.25) {
+                const keys = Object.keys(ITEM_TYPES);
+                const randomKey = keys[Math.floor(Math.random() * keys.length)];
+                items.push({
+                    x: x,
+                    y: y,
+                    type: randomKey,
+                    dy: 1.5,
+                    size: 16
+                });
+            }
+        }
+
+        function applyItem(type) {
+            if (type === 'DOUBLE_BALL') {
+                const currentBalls = [...balls];
+                currentBalls.forEach(b => {
+                    balls.push(createBall(b.x, b.y, -b.dx, b.dy, false));
+                });
+            } else if (type === 'PLUS_BALL') {
+                balls.push(createBall(paddle.x + paddle.width / 2, paddle.y - 10, (Math.random() - 0.5) * 4, -3.5, false));
+            } else if (type === 'EXPAND_PADDLE') {
+                paddle.width = paddle.baseWidth * 1.5;
+                if (paddle.expandTimer) clearTimeout(paddle.expandTimer);
+                paddle.expandTimer = setTimeout(() => {
+                    paddle.width = paddle.baseWidth;
+                }, 8000);
+            }
+        }
+
+        function collisionDetection() {
+            let activeBricksLeft = 0;
+
+            for (let c = 0; c < brickColumnCount; c++) {
+                for (let r = 0; r < brickRowCount; r++) {
+                    let b = bricks[c][r];
+                    if (b.status === 1) {
+                        activeBricksLeft++;
+                        balls.forEach(ball => {
+                            if (
+                                ball.x > b.x &&
+                                ball.x < b.x + brickWidth &&
+                                ball.y > b.y &&
+                                ball.y < b.y + brickHeight
+                            ) {
+                                ball.dy = -ball.dy;
+                                b.status = 0;
+                                
+                                const bonusScore = 10 + (combo * 5);
+                                score += bonusScore;
+                                scoreVal.innerText = score;
+
+                                spawnItem(b.x + brickWidth / 2, b.y + brickHeight / 2);
+                            }
+                        });
+                    }
+                }
+            }
+
+            // Check stage clear
+            if (activeBricksLeft === 0 && gameState === 'PLAYING') {
+                if (currentStage < maxStages) {
+                    gameState = 'STAGE_CLEAR';
+                    showOverlay(`STAGE ${currentStage} CLEAR!`, `축하합니다! 다음 스테이지 준비 완료.`, false);
+                } else {
+                    gameState = 'VICTORY';
+                    showOverlay("ALL CLEAR!", `모든 6개 스테이지를 돌파하셨습니다! 최종 점수: ${score}`, true);
+                }
+            }
+        }
+
+        function updateItems() {
+            for (let i = items.length - 1; i >= 0; i--) {
+                let item = items[i];
+                item.y += item.dy;
+
+                if (
+                    item.y + item.size / 2 >= paddle.y &&
+                    item.y - item.size / 2 <= paddle.y + paddle.height &&
+                    item.x >= paddle.x &&
+                    item.x <= paddle.x + paddle.width
+                ) {
+                    applyItem(item.type);
+                    items.splice(i, 1);
+                    continue;
+                }
+
+                if (item.y > LOGICAL_HEIGHT) {
+                    items.splice(i, 1);
+                }
+            }
+        }
+
+        function drawItems() {
+            items.forEach(item => {
+                const info = ITEM_TYPES[item.type];
+                ctx.beginPath();
+                ctx.arc(item.x, item.y, item.size / 2, 0, Math.PI * 2);
+                ctx.fillStyle = info.color;
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = info.color;
+                ctx.fill();
+                ctx.closePath();
+                ctx.shadowBlur = 0;
+
+                ctx.font = '9px monospace';
+                ctx.fillStyle = '#000';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(info.symbol, item.x, item.y);
+            });
+        }
+
+        function drawBall(ball) {
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+            ctx.fillStyle = ball.color;
+            ctx.shadowBlur = 12;
+            ctx.shadowColor = ball.color;
+            ctx.fill();
+            ctx.closePath();
+            ctx.shadowBlur = 0;
+        }
+
+        function drawPaddle() {
+            ctx.beginPath();
+            ctx.roundRect(paddle.x, paddle.y, paddle.width, paddle.height, 6);
+            ctx.fillStyle = paddle.color;
+            ctx.shadowBlur = 12;
+            ctx.shadowColor = paddle.color;
+            ctx.fill();
+            ctx.closePath();
+            ctx.shadowBlur = 0;
+        }
+
+        function drawBricks() {
+            for (let c = 0; c < brickColumnCount; c++) {
+                for (let r = 0; r < brickRowCount; r++) {
+                    if (bricks[c][r].status === 1) {
+                        let brickX = c * (brickWidth + brickPadding) + brickOffsetLeft;
+                        let brickY = r * (brickHeight + brickPadding) + brickOffsetTop;
+                        bricks[c][r].x = brickX;
+                        bricks[c][r].y = brickY;
+                        
+                        ctx.beginPath();
+                        ctx.roundRect(brickX, brickY, brickWidth, brickHeight, 4);
+                        ctx.fillStyle = bricks[c][r].color;
+                        ctx.shadowBlur = 8;
+                        ctx.shadowColor = bricks[c][r].color;
+                        ctx.fill();
+                        ctx.closePath();
+                        ctx.shadowBlur = 0;
+                    }
+                }
+            }
+        }
+
+        function showOverlay(title, desc, showSelect = true) {
+            overlayTitle.innerText = title;
+            overlayDesc.innerText = desc;
+            
+            if (showSelect) {
+                stageSelectBox.classList.remove('hidden');
+                renderStageButtons();
+            } else {
+                stageSelectBox.classList.add('hidden');
+            }
+
+            if (gameState === 'STAGE_CLEAR') {
+                actionBtn.innerText = `다음 스테이지 (${currentStage + 1}) 시작`;
+            } else if (gameState === 'GAMEOVER' || gameState === 'VICTORY') {
+                actionBtn.innerText = "다시 시작";
+            } else {
+                actionBtn.innerText = "게임 시작";
+            }
+
+            gameOverlay.classList.remove('opacity-0', 'pointer-events-none');
+        }
+
+        // Main animation loop
+        function draw() {
+            ctx.clearRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
+
+            drawBricks();
+            drawPaddle();
+            drawItems();
+            balls.forEach(b => drawBall(b));
+
+            if (gameState === 'PLAYING') {
+                collisionDetection();
+                updateItems();
+
+                // Process balls movement and boundaries
+                for (let i = balls.length - 1; i >= 0; i--) {
+                    let b = balls[i];
+
+                    if (b.x + b.dx > LOGICAL_WIDTH - b.radius || b.x + b.dx < b.radius) {
+                        b.dx = -b.dx;
+                    }
+                    if (b.y + b.dy < b.radius) {
+                        b.dy = -b.dy;
+                    } else if (b.y + b.radius >= paddle.y) {
+                        // Paddle collision check (front of paddle)
+                        if (
+                            b.x >= paddle.x - b.radius &&
+                            b.x <= paddle.x + paddle.width + b.radius &&
+                            b.y - b.radius <= paddle.y + paddle.height
+                        ) {
+                            b.y = paddle.y - b.radius;
+                            let hitPoint = b.x - (paddle.x + paddle.width / 2);
+                            b.dx = hitPoint * 0.15;
+                            b.dy = -Math.abs(b.dy);
+                            
+                            triggerCombo();
+                        } else if (b.y + b.dy > LOGICAL_HEIGHT - b.radius) {
+                            // Check if the lost ball is main yellow ball
+                            const isMainBallLost = b.isMain;
+                            balls.splice(i, 1);
+
+                            // Only deduct life when the MAIN ball is lost
+                            if (isMainBallLost) {
+                                lives--;
+                                livesVal.innerText = lives;
+                                resetCombo();
+
+                                if (lives <= 0) {
+                                    gameState = 'GAMEOVER';
+                                    showOverlay("GAME OVER", "아쉽네요! 모든 생명을 잃었습니다.", true);
+                                } else {
+                                    // Reset balls & paddle positioning on main ball loss
+                                    resetBalls();
+                                    resetPaddle();
+                                }
+                                break;
+                            }
+                            continue;
+                        }
+                    }
+
+                    b.x += b.dx;
+                    b.y += b.dy;
+                }
+
+                // Keyboard movement
+                if (rightPressed && paddle.x < LOGICAL_WIDTH - paddle.width) {
+                    paddle.x += paddle.dx;
+                } else if (leftPressed && paddle.x > 0) {
+                    paddle.x -= paddle.dx;
+                }
+            }
+
+            requestAnimationFrame(draw);
+        }
+
+        // Init and start
+        initBricks(currentStage);
+        draw();
+    </script>
+</body>
+</html>
